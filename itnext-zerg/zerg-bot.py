@@ -7,6 +7,7 @@ import random
 
 
 class ZergAgent(base_agent.BaseAgent):
+    # Return whether the passed in unit type is currently selected by cursor
     def unit_type_is_selected(self, obs, unit_type):
         if (len(obs.observation.single_select) > 0 and
                 obs.observation.single_select[0].unit_type == unit_type):
@@ -18,30 +19,54 @@ class ZergAgent(base_agent.BaseAgent):
 
         return False
 
+    # Return the feature unit of passed in unit_type
     def get_units_by_type(self, obs, unit_type):
         return [unit for unit in obs.observation.feature_units
                 if unit.unit_type == unit_type]
 
+    # Each action the bot takes in-game is a step.  Steps are processed
+    # on a fixed time interval.  This is the heart of our agent -
+    # the sequence of steps taken.
+    #
+    # This bot is a simple scripted / rule-based program. No RL going on.
     def step(self, obs):
         super(ZergAgent, self).step(obs)
 
-        if self.unit_type_is_selected(obs, units.Zerg.Drone):
-            if (actions.FUNCTIONS.Build_SpawningPool_screen.id in
+        spawning_pools = self.get_units_by_type(obs, units.Zerg.SpawningPool)
+        if len(spawning_pools) == 0:
+            # Action if no spawning pools and have selected Drones: Build pool
+            if self.unit_type_is_selected(obs, units.Zerg.Drone):
+                if (actions.FUNCTIONS.Build_SpawningPool_screen.id in
+                        obs.observation.available_actions):
+                    x = random.randint(0, 83)
+                    y = random.randint(0, 83)
+
+                    return actions.FUNCTIONS.Build_SpawningPool_screen('now', (x, y)) # noqa
+
+            # Action if no spawning pools and no selected Drones: Select drones
+            drones = self.get_units_by_type(obs, units.Zerg.Drone)
+            if len(drones) > 0:
+                drone = random.choice(drones)
+
+                return actions.FUNCTIONS.select_point("select_all_type",
+                                                    (drone.x, drone.y))
+
+        # Action if selected Larvae: Build zerglings
+        if self.unit_type_is_selected(obs, units.Zerg.Larva):
+            if (actions.FUNCTIONS.Train_Zergling_quick.id in
                     obs.observation.available_actions):
-                x = random.randint(0, 83)
-                y = random.randint(0, 83)
+                return actions.FUNCTIONS.Train_Zergling_quick('now')
 
-                return actions.FUNCTIONS.Build_SpawningPool_screen('now', (x, y)) # noqa
+        # Action: Select all Larva
+        # (in-game, return causes a ctrl+click on randomly chosen larva.)
+        larvae = self.get_units_by_type(obs, units.Zerg.Larva)
+        if len(larvae) > 0:
+            larva = random.choice(larvae)
 
-        drones = [unit for unit in obs.observation.feature_units
-                  if unit.unit_type == units.Zerg.Drone]
+            return actions.FUNCTIONS.select_point('select_all_type',
+                                                  (larva.x, larva.y))
 
-        if len(drones) > 0:
-            drone = random.choice(drones)
-
-            return actions.FUNCTIONS.select_point("select_all_type",
-                                                  (drone.x, drone.y))
-
+        # Finally, we couldn't find anything to do. Do nothing.
         return actions.FUNCTIONS.no_op()
 
 
