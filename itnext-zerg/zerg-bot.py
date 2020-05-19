@@ -7,6 +7,11 @@ import random
 
 
 class ZergAgent(base_agent.BaseAgent):
+    def __init__(self):
+        super(ZergAgent, self).__init__()
+
+        self.attack_coords = None
+
     # Return whether the passed in unit type is currently selected by cursor
     def unit_type_is_selected(self, obs, unit_type):
         if (len(obs.observation.single_select) > 0 and
@@ -24,6 +29,9 @@ class ZergAgent(base_agent.BaseAgent):
         return [unit for unit in obs.observation.feature_units
                 if unit.unit_type == unit_type]
 
+    def can_do(self, obs, action):
+        return action in obs.observation.available_actions
+
     # Each action the bot takes in-game is a step.  Steps are processed
     # on a fixed time interval.  This is the heart of our agent -
     # the sequence of steps taken.
@@ -32,12 +40,36 @@ class ZergAgent(base_agent.BaseAgent):
     def step(self, obs):
         super(ZergAgent, self).step(obs)
 
+        # First turn setup: Determine attack coordinates
+        if obs.first():
+            player_y, player_x = (
+                obs.observation.feature_minimap.player_relative ==
+                features.PlayerRelative.SELF).nonzero()
+            xmean = player_x.mean()
+            ymean = player_y.mean()
+
+            if xmean <= 31 and ymean <= 31:
+                self.attack_coords = (49, 49)
+            else:
+                self.attack_coords = (12, 16)
+
+        zerglings = self.get_units_by_type(obs, units.Zerg.Zergling)
+        if len(zerglings) >= 20:
+            # If have army selected, send to attack.
+            if self.unit_type_is_selected(obs, units.Zerg.Zergling):
+                if self.can_do(obs, actions.FUNCTIONS.Attack_minimap.id):
+                    return actions.FUNCTIONS.Attack_minimap('now',
+                                                            self.attack_coords)
+
+            # If have available army to select, select army
+            if self.can_do(obs, actions.FUNCTIONS.select_army.id):
+                return actions.FUNCTIONS.select_army('select')
+
         spawning_pools = self.get_units_by_type(obs, units.Zerg.SpawningPool)
         if len(spawning_pools) == 0:
             # Action if no spawning pools and have selected Drones: Build pool
             if self.unit_type_is_selected(obs, units.Zerg.Drone):
-                if (actions.FUNCTIONS.Build_SpawningPool_screen.id in
-                        obs.observation.available_actions):
+                if self.can_do(obs, actions.FUNCTIONS.Build_SpawningPool_screen.id): # noqa
                     x = random.randint(0, 83)
                     y = random.randint(0, 83)
 
@@ -49,12 +81,17 @@ class ZergAgent(base_agent.BaseAgent):
                 drone = random.choice(drones)
 
                 return actions.FUNCTIONS.select_point("select_all_type",
-                                                    (drone.x, drone.y))
+                                                      (drone.x, drone.y))
 
-        # Action if selected Larvae: Build zerglings
+        # Action if selected Larvae: Build zerglings if supply, else overlords
         if self.unit_type_is_selected(obs, units.Zerg.Larva):
-            if (actions.FUNCTIONS.Train_Zergling_quick.id in
-                    obs.observation.available_actions):
+            free_supply = (obs.observation.player.food_cap -
+                           obs.observation.player.food_used)
+            if free_supply == 0:
+                if self.can_do(obs, actions.FUNCTIONS.Train_Overlord_quick.id):
+                    return actions.FUNCTIONS.Train_Overlord_quick('now')
+
+            if self.can_do(obs, actions.FUNCTIONS.Train_Zergling_quick.id):
                 return actions.FUNCTIONS.Train_Zergling_quick('now')
 
         # Action: Select all Larva
