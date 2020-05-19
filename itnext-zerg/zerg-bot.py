@@ -28,4 +28,18 @@ def main(unused_argv):
 
                 agent.setup(env.observation_spec(), env.action_spec())
 
+                timesteps = env.reset()
+                agent.reset()
 
+                while True:
+                    step_actions = [agent.step(timesteps[0])]
+                    if timesteps[0].last():
+                        break
+                    timesteps = env.step(step_actions)
+
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    app.run(main)
